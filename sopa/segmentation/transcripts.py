@@ -16,7 +16,7 @@ from spatialdata.transformations import get_transformation
 from tqdm import tqdm
 
 from .._constants import SopaKeys
-from .._sdata import get_spatial_element, get_spatial_image
+from .._sdata import get_spatial_element
 from . import aggregation, shapes
 
 log = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ def resolve(
     sdata: SpatialData,
     temp_dir: str,
     gene_column: str,
+    image_key: str,
     patches_dirs: list[str] | None = None,
     min_area: float = 0,
     shapes_key: str = SopaKeys.BAYSOR_BOUNDARIES,
@@ -45,7 +46,6 @@ def resolve(
     patches_cells, adatas = _read_all_segmented_patches(temp_dir, min_area, patches_dirs)
     geo_df, cells_indices, new_ids = _resolve_patches(patches_cells, adatas)
 
-    image_key, _ = get_spatial_image(sdata, return_key=True)
     points = get_spatial_element(sdata.points)
     transformations = get_transformation(points, get_all=True).copy()
 
