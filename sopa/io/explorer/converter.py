@@ -109,7 +109,7 @@ def write(
     if SopaKeys.TABLE in sdata.tables:
         adata = sdata.tables[SopaKeys.TABLE]
 
-        shapes_key = adata.uns["spatialdata_attrs"]["region"]
+        shapes_key = adata.uns["spatialdata_attrs"]["region"][0]
         geo_df = sdata[shapes_key]
 
         if _should_save(mode, "c"):
