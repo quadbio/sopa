@@ -143,6 +143,7 @@ class StainingSegmentation:
             patch_dir: Directory inside which segmentation results will be saved
             patch_index: Index of the patch on which to run segmentation. NB: the number of patches is `len(sdata['sopa_patches'])`
         """
+        log.info(f"Running segmentation on patch {patch_index}")
         patch = self.sdata[SopaKeys.PATCHES].geometry[patch_index]
 
         cells = self._run_patch(patch)

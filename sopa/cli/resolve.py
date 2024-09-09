@@ -89,7 +89,9 @@ def baysor(
 
     sdata = read_zarr_standardized(sdata_path)
 
-    resolve(sdata, baysor_temp_dir, gene_column, patches_dirs, min_area)
+    resolve(
+        sdata=sdata, temp_dir=baysor_temp_dir, gene_column=gene_column, patches_dirs=patches_dirs, min_area=min_area
+    )
 
 
 @app_resolve.command()
