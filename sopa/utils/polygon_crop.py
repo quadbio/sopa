@@ -34,6 +34,17 @@ HELPER = """Enclose cells within a polygon. Helper:
 
 VALID_N_CHANNELS = [1, 3]
 
+REGION_PROPERTIES = {
+    "label": 0,
+    "area": 2,
+    "axis_major_length": 1,
+    "axis_minor_length": 1,
+    "bbox": 1,
+    "centroid": 1,
+    "eccentricity": 0,
+    "equivalent_diameter_area": 1,
+}
+
 
 def _prepare(
     sdata: SpatialData,
@@ -84,12 +95,20 @@ def _filter_rois(geo_df: gpd.GeoDataFrame, area_threshold: float | None, density
 
     if area_threshold is not None:
         mask = geo_df["area"] > area_threshold
-        log.info(f"Filtering {np.sum(~mask)} regions with area < {area_threshold}")
+        if np.sum(~mask) > 0:
+            filter_areas = list(geo_df.loc[~mask, "area"].values)
+            log.info(
+                f"Filtering {np.sum(~mask):,} regions with area < {area_threshold:,} ({', '.join(f'{area:,}' for area in filter_areas)})"
+            )
         geo_df = geo_df[mask]
 
     if density_threshold is not None:
         mask = geo_df["transcript_density"] > density_threshold
-        log.info(f"Filtering {np.sum(~mask)} regions with density < {density_threshold}")
+        if np.sum(~mask) > 0:
+            filter_densities = list(geo_df.loc[~mask, "transcript_density"].values)
+            log.info(
+                f"Filtering {np.sum(~mask)} regions with density < {density_threshold} ({', '.join(map(str, filter_densities))})"
+            )
         geo_df = geo_df[mask]
 
     return geo_df
@@ -131,6 +150,16 @@ def _get_polygon_lambda(bbox, scale_factor, image):
         return lambda row: Polygon((measure.find_contours(image == row["label"], 0.5)[0] * scale_factor)[:, ::-1])
 
 
+def _convert_scales(geo_df, scale_factor):
+    for col in geo_df.columns:
+        key = col.split("-")[0]
+        if key in REGION_PROPERTIES.keys():
+            if REGION_PROPERTIES[key] == 1:
+                geo_df[col] = geo_df[col] * scale_factor
+            elif REGION_PROPERTIES[key] == 2:
+                geo_df[col] = geo_df[col] * scale_factor**2
+
+
 def _identify_rois(
     img: np.array,
     scale_factor: float,
@@ -149,20 +178,11 @@ def _identify_rois(
     img = _process_image(img, sigma, disk_size, expand)
 
     # Extract region properties
-    region_properties = [
-        "label",
-        "area",
-        "axis_major_length",
-        "axis_minor_length",
-        "bbox",
-        "centroid",
-        "eccentricity",
-        "equivalent_diameter_area",
-    ]
-    region_dict = measure.regionprops_table(img, properties=region_properties)
+    region_dict = measure.regionprops_table(img, properties=REGION_PROPERTIES.keys())
 
     if len(region_dict) > 0:
         region_df = pd.DataFrame(region_dict)
+        region_df["label"] = region_df["label"].astype("category")
 
         # Get the appropriate lambda function to extract the polygon
         polygon_lambda = _get_polygon_lambda(bbox, scale_factor, img)
@@ -177,13 +197,16 @@ def _identify_rois(
         log.warning("No region found. Using the whole image as the bounding box.")
         geo_df = _get_entire_image_bbox(img, scale_factor)
 
+    # convert the measured properties back to the original scale
+    _convert_scales(geo_df, scale_factor)
+
     return geo_df
 
 
 def _get_entire_image_bbox(image, scale_factor):
     geo_df = gpd.GeoDataFrame(
         {
-            "area": [image.shape[0] * image.shape[1]],
+            "area": [image.shape[0] * image.shape[1] * scale_factor**2],
             "geometry": [
                 Polygon(
                     [
@@ -298,8 +321,8 @@ def automatic_polygon_selection(
     sigma: float = 120,
     expand: int = 240,
     disk_size: int = 240,
-    area_threshold: float = 6400,
-    density_threshold: float = 100,
+    area_threshold: float = 300000,
+    density_threshold: float = 1e-3,
     bbox: bool = False,
     image_key: str | None = None,
 ):
@@ -345,6 +368,7 @@ def automatic_polygon_selection(
     if geo_df.shape[0] == 0:
         log.warning("No region found. Using the whole image as the bounding box.")
         geo_df = _get_entire_image_bbox(image, scale_factor)
+        _convert_scales(geo_df, scale_factor)
 
     sdata.shapes[ROI.KEY] = ShapesModel.parse(geo_df)
 
