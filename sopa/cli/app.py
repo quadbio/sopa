@@ -176,7 +176,7 @@ def automatic_crop(
         sigma=sigma,
         expand=expand,
         disk_size=disk_size,
-        threshold_size=threshold_size,
+        area_threshold=threshold_size,
     )
 
 

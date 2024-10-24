@@ -5,6 +5,7 @@ import logging
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import zarr
 from matplotlib.widgets import PolygonSelector
 from scipy import ndimage
@@ -34,81 +35,169 @@ HELPER = """Enclose cells within a polygon. Helper:
 VALID_N_CHANNELS = [1, 3]
 
 
-def _prepare(sdata: SpatialData, channels: list[str], scale_factor: float):
-    image_key, spatial_image = get_spatial_image(sdata, return_key=True)
+def _prepare(
+    sdata: SpatialData,
+    channels: list[str] | str | None,
+    scale_factor: float,
+    aggregate_channels: bool = False,
+    image_key: str | None = None,
+):
+    image_key, spatial_image = get_spatial_image(sdata, return_key=True, key=image_key)
     image = spatial_image.transpose("y", "x", "c")
 
-    if channels is not None and len(channels):
-        assert (
-            len(channels) in VALID_N_CHANNELS
-        ), f"Number of channels provided must be in: {', '.join(VALID_N_CHANNELS)}"
-        image = image.sel(c=channels)
+    if isinstance(channels, str):
+        channels = [channels]
+
+    if aggregate_channels:
+        if channels is not None and len(channels):
+            image = image.sel(c=channels)
+            image = image.max(axis=-1)
     else:
-        assert (
-            len(image.coords["c"]) in VALID_N_CHANNELS
-        ), f"Choose one or three channels among {image.c.values} by using the --channels argument"
+        if channels is not None and len(channels):
+            assert (
+                len(channels) in VALID_N_CHANNELS
+            ), f"Number of channels provided must be in: {', '.join(VALID_N_CHANNELS)}"
+            image = image.sel(c=channels)
+        else:
+            assert (
+                len(image.coords["c"]) in VALID_N_CHANNELS
+            ), f"Choose one or three channels among {image.c.values} by using the --channels argument"
 
     log.info(f"Resizing image by a factor of {scale_factor}")
     return image_key, resize(image, scale_factor).compute()
 
 
-def _bbox_multiregion(
+def _compute_transcript_density(sdata: SpatialData, filter_key: str = "Blank"):
+    geo_df = sdata[ROI.KEY]
+    transcripts_key = next(iter(sdata.points))
+
+    sdata_agg = sdata.aggregate(values=transcripts_key, by=ROI.KEY, agg_func="count")
+    adata = sdata_agg["table"][:, ~sdata_agg["table"].var_names.str.startswith(filter_key)].copy()
+
+    geo_df["n_transcripts"] = np.array(adata.X.sum(1)).flatten().copy()
+    geo_df["transcript_density"] = geo_df["n_transcripts"] / geo_df["area"]
+
+    return geo_df
+
+
+def _filter_rois(geo_df: gpd.GeoDataFrame, area_threshold: float | None, density_threshold: float | None):
+
+    if area_threshold is not None:
+        mask = geo_df["area"] > area_threshold
+        log.info(f"Filtering {np.sum(~mask)} regions with area < {area_threshold}")
+        geo_df = geo_df[mask]
+
+    if density_threshold is not None:
+        mask = geo_df["transcript_density"] > density_threshold
+        log.info(f"Filtering {np.sum(~mask)} regions with density < {density_threshold}")
+        geo_df = geo_df[mask]
+
+    return geo_df
+
+
+def _process_image(image: np.ndarray, sigma: float, disk_size: float, expand: int):
+
+    # Apply gaussian smoothing and thresholding
+    image = gaussian(image, sigma=sigma)
+    thr = threshold_otsu(image)
+    image = (image > thr).astype(int)
+
+    # Fill holes in binary image and apply median filter to remove outliers
+    image = ndimage.binary_fill_holes(image).astype("uint8")
+    image = median(image, disk(disk_size))
+
+    # Label connected components (regions) and expand the regions
+    image = measure.label(image)
+    image = expand_labels(image, distance=expand)
+
+    # Fill holes and label again to take care of slightly detached tissue
+    image = ndimage.binary_fill_holes(image).astype("uint8")
+    image = measure.label(image)
+
+    return image
+
+
+def _get_polygon_lambda(bbox, scale_factor, image):
+    if bbox:
+        return lambda row: Polygon(
+            [
+                (row["bbox-1"] * scale_factor, row["bbox-0"] * scale_factor),
+                (row["bbox-1"] * scale_factor, row["bbox-2"] * scale_factor),
+                (row["bbox-3"] * scale_factor, row["bbox-2"] * scale_factor),
+                (row["bbox-3"] * scale_factor, row["bbox-0"] * scale_factor),
+            ]
+        )
+    else:
+        return lambda row: Polygon((measure.find_contours(image == row["label"], 0.5)[0] * scale_factor)[:, ::-1])
+
+
+def _identify_rois(
     img: np.array,
     scale_factor: float,
     sigma: float,
     disk_size: float,
-    threshold_size: float,
     expand: int,
-) -> Polygon:
+    bbox: bool,
+) -> gpd.GeoDataFrame:
 
-    # Take the max along the channel axis
-    img = img.max(axis=-1)
+    # convert parameters given the `scale_factor`:
+    sigma = sigma / scale_factor
+    disk_size = int(disk_size / scale_factor)
+    expand = int(expand / scale_factor)
 
-    # Apply gaussian smoothing and thresholding
-    img = gaussian(img, sigma=sigma)
-    thr = threshold_otsu(img)
-    img = (img > thr).astype(int)
-
-    # Fill holes in binary image and apply median filter to remove outliers
-    img = ndimage.binary_fill_holes(img).astype("uint8")
-    img = median(img, disk(disk_size))
-
-    # Label connected components (regions) and expland the regions
-    img = measure.label(img)
-    img = expand_labels(img, distance=expand)
+    # Process the image
+    img = _process_image(img, sigma, disk_size, expand)
 
     # Extract region properties
-    regions = measure.regionprops(img)
+    region_properties = [
+        "label",
+        "area",
+        "axis_major_length",
+        "axis_minor_length",
+        "bbox",
+        "centroid",
+        "eccentricity",
+        "equivalent_diameter_area",
+    ]
+    region_dict = measure.regionprops_table(img, properties=region_properties)
 
-    # Filter regions by size if specified
-    if threshold_size is not None:
-        regions = [region for region in regions if region.area > threshold_size]
+    if len(region_dict) > 0:
+        region_df = pd.DataFrame(region_dict)
 
-    # Calculate the combined bounding box
-    if regions:
-        if len(regions) > 1:
-            log.info(f"Found {len(regions)} regions. Combining their bounding boxes.")
-        else:
-            log.info("Found 1 region.")
-        x_min = min(region.bbox[1] for region in regions) * scale_factor
-        y_min = min(region.bbox[0] for region in regions) * scale_factor
-        x_max = max(region.bbox[3] for region in regions) * scale_factor
-        y_max = max(region.bbox[2] for region in regions) * scale_factor
+        # Get the appropriate lambda function to extract the polygon
+        polygon_lambda = _get_polygon_lambda(bbox, scale_factor, img)
+
+        # Create polygond and filter out invalid ones
+        region_df["geometry"] = region_df.apply(polygon_lambda, axis=1)
+        region_df = region_df[region_df["geometry"].apply(lambda p: p.is_valid)]
+
+        geo_df = gpd.GeoDataFrame(region_df)
 
     else:
         log.warning("No region found. Using the whole image as the bounding box.")
-        x_min, y_min = 0, 0
-        x_max = img.shape[1] * scale_factor
-        y_max = img.shape[0] * scale_factor
+        geo_df = _get_entire_image_bbox(img, scale_factor)
 
-    return Polygon(
-        [
-            (x_min, y_min),
-            (x_min, y_max),
-            (x_max, y_max),
-            (x_max, y_min),
-        ]
+    return geo_df
+
+
+def _get_entire_image_bbox(image, scale_factor):
+    geo_df = gpd.GeoDataFrame(
+        {
+            "area": [image.shape[0] * image.shape[1]],
+            "geometry": [
+                Polygon(
+                    [
+                        (0, 0),
+                        (0, image.shape[0] * scale_factor),
+                        (image.shape[1] * scale_factor, image.shape[0] * scale_factor),
+                        (image.shape[1] * scale_factor, 0),
+                    ]
+                )
+            ],
+        }
     )
+
+    return geo_df
 
 
 class _Selector:
@@ -206,10 +295,13 @@ def automatic_polygon_selection(
     sdata: SpatialData,
     scale_factor: float = 10,
     channels: list[str] | None = None,
-    sigma: float = 240,
-    expand: int = 480,
+    sigma: float = 120,
+    expand: int = 240,
     disk_size: int = 240,
-    threshold_size: float = 6400,
+    area_threshold: float = 6400,
+    density_threshold: float = 100,
+    bbox: bool = False,
+    image_key: str | None = None,
 ):
     """Automatically identify a rectangular region of interest.
 
@@ -218,32 +310,45 @@ def automatic_polygon_selection(
     Args:
         sdata: A `SpatialData` object
         scale_factor: Resize the image by this value (high value for a lower memory usage)
-        channels: List of channel names to be used. Optional if there are already only 1 or 3 channels.
+        channels: List of channel names to be used. These will be aggregated.
         sigma: Standard deviation for gaussian smoothing
         expand: Distance to expand the regions
         disk_size: Radius of the disk used in median filtering
-        threshold_size: Minimum size of regions
+        area_threshold: Minimum size of regions
+        bbox: If True, the combined bounding box of the regions will be used as the polygon
+        image_key: Key of the image to be used. None is only allowed if there is a single image in the sdata object.
 
     """
 
-    image_key, image = _prepare(sdata, channels=channels, scale_factor=scale_factor)
-
-    # compute the bounding box for all regions, make sure to adjust the parameters for the `scale_factor`
-    polygon = _bbox_multiregion(
-        image,
-        scale_factor=scale_factor,
-        sigma=sigma / scale_factor,
-        disk_size=int(disk_size / scale_factor),
-        threshold_size=threshold_size / (scale_factor**2),
-        expand=int(expand / scale_factor),
+    image_key, image = _prepare(
+        sdata, channels=channels, scale_factor=scale_factor, image_key=image_key, aggregate_channels=True
     )
 
-    geo_df = gpd.GeoDataFrame(geometry=[polygon])
+    # compute the bounding box for all regions
+    geo_df = _identify_rois(
+        image,
+        scale_factor=scale_factor,
+        sigma=sigma,
+        disk_size=disk_size,
+        expand=expand,
+        bbox=bbox,
+    )
 
-    geo_df = ShapesModel.parse(geo_df, transformations=get_transformation(sdata[image_key], get_all=True).copy())
-    sdata.shapes[ROI.KEY] = geo_df
+    sdata.shapes[ROI.KEY] = ShapesModel.parse(
+        geo_df, transformations=get_transformation(sdata[image_key], get_all=True).copy()
+    )
 
-    if sdata.is_backed():
-        sdata.write_element(ROI.KEY, overwrite=True)
+    # compute transcript density under each ROI and filter them
+    geo_df = _compute_transcript_density(sdata)
+    geo_df = _filter_rois(geo_df, area_threshold=area_threshold, density_threshold=density_threshold)
+
+    if geo_df.shape[0] == 0:
+        log.warning("No region found. Using the whole image as the bounding box.")
+        geo_df = _get_entire_image_bbox(image, scale_factor)
+
+    sdata.shapes[ROI.KEY] = ShapesModel.parse(geo_df)
+
+    # if sdata.is_backed():
+    #     sdata.write_element(ROI.KEY, overwrite=True)
 
     log.info(f"Polygon saved in sdata['{ROI.KEY}']")
