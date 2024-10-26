@@ -136,18 +136,47 @@ def _process_image(image: np.ndarray, sigma: float, disk_size: float, expand: in
     return image
 
 
-def _get_polygon_lambda(bbox, scale_factor, image):
+def _polygon_extractor(row, bbox: bool, scale_factor: float, image: np.ndarray):
     if bbox:
-        return lambda row: Polygon(
-            [
-                (row["bbox-1"] * scale_factor, row["bbox-0"] * scale_factor),
-                (row["bbox-1"] * scale_factor, row["bbox-2"] * scale_factor),
-                (row["bbox-3"] * scale_factor, row["bbox-2"] * scale_factor),
-                (row["bbox-3"] * scale_factor, row["bbox-0"] * scale_factor),
-            ]
-        )
+        return _create_bbox_polygon(row, scale_factor)
     else:
-        return lambda row: Polygon((measure.find_contours(image == row["label"], 0.5)[0] * scale_factor)[:, ::-1])
+        return _create_contour_polygon(row, scale_factor, image)
+
+
+def _create_bbox_polygon(row, scale_factor: float) -> Polygon:
+    return Polygon(
+        [
+            (row["bbox-1"] * scale_factor, row["bbox-0"] * scale_factor),
+            (row["bbox-1"] * scale_factor, row["bbox-2"] * scale_factor),
+            (row["bbox-3"] * scale_factor, row["bbox-2"] * scale_factor),
+            (row["bbox-3"] * scale_factor, row["bbox-0"] * scale_factor),
+        ]
+    )
+
+
+def _create_contour_polygon(row, scale_factor: float, image: np.ndarray, n_pixel_pad: int = 1) -> Polygon:
+    # pad the image to avoid boundary issues
+    padded_image = np.pad(
+        image,
+        pad_width=n_pixel_pad,
+        mode="constant",
+        constant_values=0,
+    )
+
+    # Find contours for the region
+    contours = measure.find_contours(padded_image == row["label"], 0.5)
+
+    # Raise an error if more than one contour is found for a region
+    if len(contours) != 1:
+        raise ValueError(f"More than one contour found for region {row['label']}")
+
+    # Raise an error if the countour is not closed
+    if not np.allclose(contours[0][0], contours[0][-1]):
+        raise ValueError(f"Contour for region {row['label']} is not closed")
+
+    scaled_contour = ((contours[0] - n_pixel_pad / 2) * scale_factor)[:, ::-1]
+
+    return Polygon(scaled_contour)
 
 
 def _convert_scales(geo_df, scale_factor):
@@ -184,11 +213,9 @@ def _identify_rois(
         region_df = pd.DataFrame(region_dict)
         region_df["label"] = region_df["label"].astype("category")
 
-        # Get the appropriate lambda function to extract the polygon
-        polygon_lambda = _get_polygon_lambda(bbox, scale_factor, img)
-
         # Create polygond and filter out invalid ones
-        region_df["geometry"] = region_df.apply(polygon_lambda, axis=1)
+        # region_df["geometry"] = region_df.apply(polygon_lambda, axis=1)
+        region_df["geometry"] = region_df.apply(lambda row: _polygon_extractor(row, bbox, scale_factor, img), axis=1)
         region_df = region_df[region_df["geometry"].apply(lambda p: p.is_valid)]
 
         geo_df = gpd.GeoDataFrame(region_df)
