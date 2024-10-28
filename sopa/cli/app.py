@@ -155,13 +155,15 @@ def automatic_crop(
     sdata_path: str = typer.Argument(help=SDATA_HELPER),
     channels: list[str] = typer.Option(
         None,
-        help="List of channel names to be used. Optional if there are already only 1 or 3 channels",
+        help="List of channel names to be used.",
     ),
     scale_factor: float = typer.Option(10, help="Resize the image by this value (high value for a lower memory usage)"),
-    sigma: float = typer.Option(240, help="Sigma of the Gaussian filter"),
-    expand: int = typer.Option(480, help="Expand the polygon by this value"),
+    sigma: float = typer.Option(120, help="Sigma of the Gaussian filter"),
+    expand: int = typer.Option(240, help="Expand the polygon by this value"),
     disk_size: int = typer.Option(240, help="Disk size for the morphological closing"),
-    threshold_size: float = typer.Option(6400, help="Minimum size of the polygon"),
+    area_threshold: float = typer.Option(300000, help="Minimum size of the polygon in px"),
+    density_threshold: float = typer.Option(1e-3, help="Minimum averagetranscript density per pixel"),
+    bbox: bool = type.Option(False, help="Whether to use the bounding box instead of the contour of the polygon"),
 ):
     """Crop an image based on an automatic rectangular bounding box selection"""
     from sopa.io.standardize import read_zarr_standardized
@@ -176,7 +178,9 @@ def automatic_crop(
         sigma=sigma,
         expand=expand,
         disk_size=disk_size,
-        area_threshold=threshold_size,
+        area_threshold=area_threshold,
+        density_threshold=density_threshold,
+        bbox=bbox,
     )
 
 

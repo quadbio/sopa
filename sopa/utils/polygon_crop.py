@@ -399,7 +399,7 @@ def automatic_polygon_selection(
 
     sdata.shapes[ROI.KEY] = ShapesModel.parse(geo_df)
 
-    # if sdata.is_backed():
-    #     sdata.write_element(ROI.KEY, overwrite=True)
+    if sdata.is_backed():
+        sdata.write_element(ROI.KEY, overwrite=True)
 
     log.info(f"Polygon saved in sdata['{ROI.KEY}']")
