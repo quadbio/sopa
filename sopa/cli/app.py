@@ -163,7 +163,7 @@ def automatic_crop(
     disk_size: int = typer.Option(240, help="Disk size for the morphological closing"),
     area_threshold: float = typer.Option(300000, help="Minimum size of the polygon in px"),
     density_threshold: float = typer.Option(1e-3, help="Minimum averagetranscript density per pixel"),
-    bbox: bool = type.Option(False, help="Whether to use the bounding box instead of the contour of the polygon"),
+    bbox: bool = typer.Option(False, help="Whether to use the bounding box instead of the contour of the polygon"),
 ):
     """Crop an image based on an automatic rectangular bounding box selection"""
     from sopa.io.standardize import read_zarr_standardized

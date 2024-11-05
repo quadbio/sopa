@@ -63,6 +63,8 @@ def _prepare(
         if channels is not None and len(channels):
             image = image.sel(c=channels)
             image = image.max(axis=-1)
+        else:
+            image = image.max(axis=-1)
     else:
         if channels is not None and len(channels):
             assert (
@@ -352,6 +354,7 @@ def automatic_polygon_selection(
     density_threshold: float = 1e-3,
     bbox: bool = False,
     image_key: str | None = None,
+    write_element: bool = True,
 ):
     """Automatically identify a rectangular region of interest.
 
@@ -367,6 +370,7 @@ def automatic_polygon_selection(
         area_threshold: Minimum size of regions
         bbox: If True, the combined bounding box of the regions will be used as the polygon
         image_key: Key of the image to be used. None is only allowed if there is a single image in the sdata object.
+        write_element: If True, the polygon will be written to disk.
 
     """
 
@@ -399,7 +403,7 @@ def automatic_polygon_selection(
 
     sdata.shapes[ROI.KEY] = ShapesModel.parse(geo_df)
 
-    if sdata.is_backed():
+    if sdata.is_backed() and write_element:
         sdata.write_element(ROI.KEY, overwrite=True)
 
     log.info(f"Polygon saved in sdata['{ROI.KEY}']")
