@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Callable
 
@@ -7,12 +8,15 @@ import numpy as np
 
 from .._constants import SopaKeys
 
+log = logging.getLogger(__name__)
+
 
 def cellpose_patch(
     diameter: float,
     channels: list[str],
     model_type: str = "cyto3",
     pretrained_model: str | bool = False,
+    gpu: bool = False,
     cellpose_model_kwargs: dict | None = None,
     **cellpose_eval_kwargs: int,
 ) -> Callable:
@@ -23,6 +27,7 @@ def cellpose_patch(
         channels: List of channel names
         model_type: Cellpose model type
         pretrained_model: Path to the pretrained model to be loaded
+        gpu: Whether to use the GPU
         cellpose_model_kwargs: Kwargs to be provided to the `cellpose.models.CellposeModel` object
         **cellpose_eval_kwargs: Kwargs to be provided to `model.eval` (where `model` is a `cellpose.models.CellposeModel` object)
 
@@ -39,9 +44,11 @@ def cellpose_patch(
     cellpose_model_kwargs = cellpose_model_kwargs or {}
 
     if pretrained_model:
-        model = models.CellposeModel(pretrained_model=pretrained_model, **cellpose_model_kwargs)
+        model = models.CellposeModel(pretrained_model=pretrained_model, gpu=gpu, **cellpose_model_kwargs)
     else:
-        model = models.Cellpose(model_type=model_type, **cellpose_model_kwargs)
+        model = models.Cellpose(model_type=model_type, gpu=gpu, **cellpose_model_kwargs)
+
+    log.info(f"Cellpose device: {model.device}")
 
     if isinstance(channels, str) or len(channels) == 1:
         channels = [0, 0]  # gray scale

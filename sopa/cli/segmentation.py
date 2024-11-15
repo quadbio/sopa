@@ -21,6 +21,7 @@ def cellpose(
     cellprob_threshold: float = typer.Option(-6, help="Cellpose `cellprob_threshold` parameter"),
     model_type: str = typer.Option("cyto3", help="Name of the cellpose model"),
     pretrained_model: str = typer.Option(None, help="Path to the pretrained model to be loaded"),
+    gpu: bool = typer.Option(False, help="Whether to use the GPU"),
     min_area: int = typer.Option(0, help="Minimum area (in pixels^2) for a cell to be considered as valid"),
     clip_limit: float = typer.Option(
         0.2,
@@ -41,7 +42,7 @@ def cellpose(
         default=None,
         help="Path to the temporary cellpose directory inside which we will store each individual patch segmentation. By default, saves into the `.sopa_cache/cellpose_boundaries` directory",
     ),
-    method_kwargs: str = typer.Option(
+    model_kwargs: str = typer.Option(
         {},
         callback=ast.literal_eval,
         help="Kwargs for the cellpose method builder. This should be a dictionnary, in inline string format.",
@@ -65,7 +66,8 @@ def cellpose(
         cellprob_threshold=cellprob_threshold,
         model_type=model_type,
         pretrained_model=pretrained_model,
-        **method_kwargs,
+        gpu=gpu,
+        **model_kwargs,
     )
 
     _run_staining_segmentation(
