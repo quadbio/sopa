@@ -125,7 +125,7 @@ class Patches2D:
             ), f"All sdata['{ROI.KEY}'] geometries must be polygons"
 
             if len(geo_df) == 1:
-                self.roi: Polygon = geo_df.geometry[0]
+                self.roi: Polygon = geo_df.geometry.iloc[0]
             else:
                 self.roi = MultiPolygon(list(geo_df.geometry))
 
