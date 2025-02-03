@@ -166,7 +166,7 @@ class TissueSegmentation:
             thumbnail_2d: A low-resolution 2D image (YX dimensions) of the tissue.
 
         Returns:
-            A GeoDataFrame containing the segmented polygon(s).
+            A GeoDataFrame containing the segmented polygon(s) and their areas.
         """
         import cv2
 
@@ -183,6 +183,7 @@ class TissueSegmentation:
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask_open_close, 4, cv2.CV_32S)
 
         contours = []
+        areas = []
         for i in range(1, num_labels):
             if stats[i, 4] > self.drop_threshold * np.prod(mask_open_close.shape):
                 contours_, _ = cv2.findContours(
@@ -190,8 +191,9 @@ class TissueSegmentation:
                 )
                 closed_contours = np.array(list(contours_[0]) + [contours_[0][0]])
                 contours.extend([closed_contours.squeeze()])
+                areas.append(cv2.contourArea(closed_contours.squeeze()))
 
-        return gpd.GeoDataFrame(geometry=[Polygon(contour) for contour in contours])
+        return gpd.GeoDataFrame({"geometry": [Polygon(contour) for contour in contours], "area": areas})
 
 
 def hsv_otsu(
