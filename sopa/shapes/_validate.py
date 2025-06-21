@@ -61,10 +61,27 @@ def _smoothen_cell(cell: MultiPolygon, smooth_radius: float, tolerance: float) -
     Returns:
         Shapely polygon representing the cell, or an empty Polygon if the cell was empty after smoothing
     """
-    cell = cell.buffer(-smooth_radius).buffer(2 * smooth_radius).buffer(-smooth_radius)
-    cell = cell.simplify(tolerance)
+    from shapely.errors import GEOSException
 
-    return ensure_polygon(cell)
+    try:
+        cell = cell.buffer(-smooth_radius).buffer(2 * smooth_radius).buffer(-smooth_radius)
+        cell = cell.simplify(tolerance)
+        return ensure_polygon(cell)
+    except GEOSException:
+        # Handle topology exceptions by returning the original cell with minimal smoothing
+        try:
+            # Try with a smaller smooth radius
+            reduced_smooth_radius = smooth_radius * 0.1
+            cell = cell.buffer(-reduced_smooth_radius).buffer(2 * reduced_smooth_radius).buffer(-reduced_smooth_radius)
+            cell = cell.simplify(tolerance)
+            return ensure_polygon(cell)
+        except GEOSException:
+            # If still failing, just simplify without buffering
+            try:
+                return ensure_polygon(cell.simplify(tolerance))
+            except GEOSException:
+                # Return empty polygon as last resort
+                return Polygon()
 
 
 def _default_tolerance(mean_radius: float) -> float:
