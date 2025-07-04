@@ -50,6 +50,10 @@ def cellpose(
         callback=ast.literal_eval,
         help="Kwargs for the cellpose method builder. This should be a dictionnary, in inline string format.",
     ),
+    debug_save_path: str = typer.Option(
+        None,
+        help="Path to save the GeoDataFrame when topology exceptions occur during cell smoothing (for debugging)",
+    ),
 ):
     """Perform cellpose segmentation. This can be done on all patches directly, or on one individual patch.
 
@@ -75,6 +79,7 @@ def cellpose(
         patch_index,
         cache_dir_name,
         min_patch_size=min_patch_size,
+        debug_save_path=debug_save_path,
         diameter=diameter,
         flow_threshold=flow_threshold,
         cellprob_threshold=cellprob_threshold,
@@ -228,6 +233,7 @@ def _run_staining_segmentation(
     patch_index: int | None,
     cache_dir_name: str | None,
     min_patch_size: int = 10,
+    debug_save_path: str | None = None,
     **method_kwargs: Any,
 ):
     from sopa.io.standardize import read_zarr_standardized
@@ -259,6 +265,7 @@ def _run_staining_segmentation(
             cache_dir_name=cache_dir_name,
             delete_cache=delete_cache,
             min_patch_size=min_patch_size,
+            debug_save_path=debug_save_path,
         )
         _log_whether_to_resolve(patch_index, delete_cache=delete_cache)
         return
@@ -272,6 +279,7 @@ def _run_staining_segmentation(
         clahe_kernel_size=clahe_kernel_size,
         gaussian_sigma=gaussian_sigma,
         min_patch_size=min_patch_size,
+        debug_save_path=debug_save_path,
     )
 
     patch_dir = _default_boundary_dir(sdata_path, cache_dir_name)

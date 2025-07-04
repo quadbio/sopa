@@ -34,6 +34,7 @@ class StainingSegmentation:
         clahe_kernel_size: int | Iterable[int] | None = None,
         gaussian_sigma: float = 1,
         min_patch_size: int = 10,
+        debug_save_path: str | None = None,
     ):
         """Generalized staining-based segmentation class
 
@@ -47,6 +48,7 @@ class StainingSegmentation:
             clahe_kernel_size: Parameter for skimage.exposure.equalize_adapthist (applied before running cellpose)
             gaussian_sigma: Parameter for scipy gaussian_filter (applied before running cellpose)
             min_patch_size: Minimum patch size (in pixels) for both width and height. Patches smaller than this will be skipped to avoid segmentation errors.
+            debug_save_path: Optional path to save the GeoDataFrame when topology exceptions occur during cell smoothing
         """
         assert SopaKeys.PATCHES in sdata.shapes, "Run `sopa.make_image_patches` before running segmentation"
 
@@ -58,6 +60,7 @@ class StainingSegmentation:
         self.clahe_kernel_size = clahe_kernel_size
         self.gaussian_sigma = gaussian_sigma
         self.min_patch_size = min_patch_size
+        self.debug_save_path = debug_save_path
 
         self.image_key, self.image = get_spatial_image(sdata, key=image_key, return_key=True)
 
@@ -122,7 +125,7 @@ class StainingSegmentation:
             mask = shapes.rasterize(patch, image.shape[1:], bounds)
             image = _channels_average_within_mask(image, mask)
 
-        cells = shapes.vectorize(self.method(image))
+        cells = shapes.vectorize(self.method(image), debug_save_path=self.debug_save_path)
         cells.geometry = cells.translate(*bounds[:2])
 
         return cells[cells.area >= self.min_area] if self.min_area > 0 else cells

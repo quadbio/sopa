@@ -50,13 +50,21 @@ def ensure_polygon(
     return Polygon()
 
 
-def _smoothen_cell(cell: MultiPolygon, smooth_radius: float, tolerance: float) -> Polygon:
+def _smoothen_cell(
+    cell: MultiPolygon,
+    smooth_radius: float,
+    tolerance: float,
+    debug_save_path: str | None = None,
+    cells_gdf: gpd.GeoDataFrame | None = None,
+) -> Polygon:
     """Smoothen a cell polygon
 
     Args:
-        cell_id: MultiPolygon representing a cell
-        smooth_radius: radius used to smooth the cell polygon
-        tolerance: tolerance used to simplify the cell polygon
+        cell: MultiPolygon representing a cell
+        smooth_radius: Radius used to smooth the cell polygon
+        tolerance: Tolerance used to simplify the cell polygon
+        debug_save_path: Optional path to save the GeoDataFrame when topology exceptions occur
+        cells_gdf: Optional GeoDataFrame to save for debugging
 
     Returns:
         Shapely polygon representing the cell, or an empty Polygon if the cell was empty after smoothing
@@ -68,6 +76,16 @@ def _smoothen_cell(cell: MultiPolygon, smooth_radius: float, tolerance: float) -
         cell = cell.simplify(tolerance)
         return ensure_polygon(cell)
     except GEOSException:
+        # Save debug data if path is provided
+        if debug_save_path is not None and cells_gdf is not None:
+            try:
+                cells_gdf.to_file(debug_save_path)
+                log.warning(
+                    "Topology exception occurred during cell smoothing. GeoDataFrame saved to: %s", debug_save_path
+                )
+            except (OSError, ValueError) as save_error:
+                log.warning("Failed to save debug GeoDataFrame to %s: %s", debug_save_path, save_error)
+
         # Handle topology exceptions by returning the original cell with minimal smoothing
         log.warning("Cell smoothing failed with GEOSException, trying reduced smooth radius")
         try:

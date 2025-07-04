@@ -15,13 +15,19 @@ from ._validate import _default_tolerance, _smoothen_cell
 log = logging.getLogger(__name__)
 
 
-def vectorize(mask: np.ndarray, tolerance: float | None = None, smooth_radius_ratio: float = 0.1) -> gpd.GeoDataFrame:
+def vectorize(
+    mask: np.ndarray,
+    tolerance: float | None = None,
+    smooth_radius_ratio: float = 0.1,
+    debug_save_path: str | None = None,
+) -> gpd.GeoDataFrame:
     """Convert a cells mask to multiple `shapely` geometries. Inspired from https://github.com/Vizgen/vizgen-postprocessing
 
     Args:
         mask: A cell mask. Non-null values correspond to cell ids
         tolerance: Tolerance parameter used by `shapely` during simplification. By default, define the tolerance automatically.
         smooth_radius_ratio: Ratio of the cell radius used to smooth the cell polygon.
+        debug_save_path: Optional path to save the GeoDataFrame when topology exceptions occur during cell smoothing
 
     Returns:
         GeoDataFrame of polygons representing each cell ID of the mask
@@ -39,7 +45,9 @@ def vectorize(mask: np.ndarray, tolerance: float | None = None, smooth_radius_ra
 
     tolerance = _default_tolerance(mean_radius) if tolerance is None else tolerance
 
-    cells.geometry = cells.geometry.map(lambda cell: _smoothen_cell(cell, smooth_radius, tolerance))
+    cells.geometry = cells.geometry.map(
+        lambda cell: _smoothen_cell(cell, smooth_radius, tolerance, debug_save_path, cells)
+    )
     cells = cells[~cells.is_empty]
 
     return cells

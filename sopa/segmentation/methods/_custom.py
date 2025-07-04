@@ -22,6 +22,7 @@ def custom_staining_based(
     cache_dir_name: str = SopaKeys.CUSTOM_BOUNDARIES,
     key_added: str = SopaKeys.CUSTOM_BOUNDARIES,
     min_patch_size: int = 10,
+    debug_save_path: str | None = None,
 ):
     """Run a generic staining-based segmentation model, and add a GeoDataFrame containing the cell boundaries.
 
@@ -39,6 +40,7 @@ def custom_staining_based(
         cache_dir_name: Name of the cache directory.
         key_added: Name of the key to be added to `sdata.shapes`.
         min_patch_size: Minimum patch size (in pixels) for both width and height. Patches smaller than this will be skipped to avoid segmentation errors.
+        debug_save_path: Optional path to save the GeoDataFrame when topology exceptions occur during cell smoothing.
     """
     temp_dir = get_cache_dir(sdata) / cache_dir_name
 
@@ -52,6 +54,7 @@ def custom_staining_based(
         clahe_kernel_size=clahe_kernel_size,
         gaussian_sigma=gaussian_sigma,
         min_patch_size=min_patch_size,
+        debug_save_path=debug_save_path,
     )
     segmentation.write_patches_cells(temp_dir, recover=recover)
 
