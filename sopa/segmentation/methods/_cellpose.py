@@ -31,6 +31,7 @@ def cellpose(
     gaussian_sigma: float = 1,
     key_added: str = SopaKeys.CELLPOSE_BOUNDARIES,
     cellpose_model_kwargs: dict | None = None,
+    debug_save_path: str | None = None,
     **cellpose_eval_kwargs: int,
 ):
     """Run [Cellpose](https://cellpose.readthedocs.io/en/latest/) segmentation on a SpatialData object, and add a GeoDataFrame containing the cell boundaries.
@@ -59,6 +60,7 @@ def cellpose(
         gaussian_sigma: Parameter for scipy gaussian_filter (applied before running cellpose)
         key_added: Name of the shapes element to be added to `sdata`.
         cellpose_model_kwargs: Dictionary of kwargs to be provided to the `cellpose.models.CellposeModel` object.
+        debug_save_path: Optional path to save the GeoDataFrame when topology exceptions occur during cell smoothing.
         **cellpose_eval_kwargs: Kwargs to be provided to `model.eval` (where `model` is a `cellpose.models.CellposeModel` object)
     """
     channels = channels if isinstance(channels, list) else [channels]
@@ -91,6 +93,7 @@ def cellpose(
         gaussian_sigma=gaussian_sigma,
         cache_dir_name=key_added,
         key_added=key_added,
+        debug_save_path=debug_save_path,
     )
 
 
