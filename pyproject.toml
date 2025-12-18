@@ -24,7 +24,7 @@ dependencies = [
   "typer>=0.9.0",
   "dask[distributed]>=2024.4.1",
   "pyarrow<22.0.0",              # TODO: unpin when can use latest version of spatialdata
-  "zarr<3.0.0",                  # TODO: unpin when can use latest version of spatialdata
+  # "zarr<3.0.0",                  # TODO: unpin when can use latest version of spatialdata
 ]
 
 [project.optional-dependencies]

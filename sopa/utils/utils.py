@@ -19,7 +19,7 @@ from spatialdata.transformations import (
 )
 from xarray import DataArray, DataTree
 
-from .. import settings
+from .._settings import settings
 from ..constants import ATTRS_KEY, SopaAttrs, SopaFiles, SopaKeys
 
 log = logging.getLogger(__name__)
